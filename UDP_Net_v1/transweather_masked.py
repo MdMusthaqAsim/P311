@@ -137,12 +137,31 @@ class EncoderTransformer(nn.Module):
         for i in range(self.depths[3]):
             self.block4[i].drop_path.drop_prob = dpr[cur + i]
 
-    def forward_features(self, x):
+    def forward_features(self, x, mask = None):
         B = x.shape[0]
         outs = []
         embed_dims=[64, 128, 320, 512]
         # stage 1
         x1, H1, W1 = self.patch_embed1(x)
+
+        # --- Token Masking ---
+        if mask is not None:
+
+            # Downsample mask to patch resolution
+            mask_tokens = F.interpolate(mask, size=(H1, W1), mode="bilinear", align_corners=False)
+
+            # Flatten to token format
+            mask_tokens = mask_tokens.flatten(2).transpose(1, 2)  # [B, N, 1]
+
+            # Optional hard threshold
+            # mask_tokens = (mask_tokens > 0.5).float()
+
+            # Soft
+            x1 = x1 * mask_tokens
+
+            # Apply token gating
+            x1 = x1 * mask_tokens
+
         x2, H2, W2 = self.mini_patch_embed1(x1.permute(0,2,1).reshape(B,embed_dims[0],H1,W1))
 
         for i, blk in enumerate(self.block1):
@@ -208,8 +227,8 @@ class EncoderTransformer(nn.Module):
 
         return outs
 
-    def forward(self, x):
-        x = self.forward_features(x)
+    def forward(self, x, mask = None):
+        x = self.forward_features(x, mask)
 
         return x
 
@@ -825,9 +844,9 @@ class Transweather(nn.Module):
         if path is not None:
             self.load(path)
 
-    def forward(self, x):
+    def forward(self, x, mask = None):
 
-        x1 = self.Tenc(x)
+        x1 = self.Tenc(x, mask)
 
         x2 = self.Tdec(x1)
 
@@ -873,10 +892,16 @@ class MaskedResidualTransWeather(nn.Module):
         x_masked = torch.cat([x, mask], dim=1)  # [B, 4, H, W]
 
         # 3. Dehaze (unchanged TransWeather)
-        dehazed = self.dehazer(x_masked)   # [B, 3, H, W]
+        dehazed = self.dehazer(x_masked, mask)   # [B, 3, H, W]
 
         # 4. Residual gated fusion (KEY IDEA)
-        out = mask * dehazed + (1.0 - mask) * x
+        # out = mask * dehazed + (1.0 - mask) * x
+
+        # 4. Residual fusion correction
+        out = x + mask * (dehazed - x)
+
+        # 4. No fusion (DO NOT, THIS IS ASS)
+        # out = dehazed
 
         return out, mask
 

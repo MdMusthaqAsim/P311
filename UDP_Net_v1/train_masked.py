@@ -108,6 +108,18 @@ loss_network = LossNetwork(vgg)
 loss_network.eval()
 
 # -----------------------------
+# Mask regularization losses
+# -----------------------------
+def mask_smooth_loss(mask):
+    dx = torch.abs(mask[:, :, 1:, :] - mask[:, :, :-1, :]).mean()
+    dy = torch.abs(mask[:, :, :, 1:] - mask[:, :, :, :-1]).mean()
+    return dx + dy
+
+
+def mask_binary_loss(mask):
+    return (mask * (1 - mask)).mean()
+
+# -----------------------------
 # Training loop
 # -----------------------------
 for epoch in range(args.num_epochs):
@@ -129,7 +141,19 @@ for epoch in range(args.num_epochs):
         # ---- Losses ----
         recon_loss = F.smooth_l1_loss(out, gt)
         perceptual_loss = loss_network(out, gt)
-        mask_loss = args.mask_weight * torch.mean(mask)
+
+        # Existing mask area regularization
+        mask_area_loss = torch.mean(mask)
+
+        # New regularization terms
+        smooth_loss = mask_smooth_loss(mask)
+        binary_loss = mask_binary_loss(mask)
+
+        mask_loss = args.mask_weight * (
+                mask_area_loss
+                + 0.5 * smooth_loss
+                + 0.1 * binary_loss
+        )
 
         loss = recon_loss + args.lambda_loss * perceptual_loss + mask_loss
         loss.backward()
@@ -148,7 +172,9 @@ for epoch in range(args.num_epochs):
                 f"[Epoch {epoch} | Iter {i}] "
                 f"Loss: {loss.item():.4f} | "
                 f"Recon: {recon_loss.item():.4f} | "
-                f"Mask(mean): {mask.mean().item():.4f}"
+                f"Mask(mean): {mask.mean().item():.4f} | "
+                f"Smooth: {smooth_loss.item():.4f} | "
+                f"Binary: {binary_loss.item():.4f}"
             )
 
     # ---- Epoch summary ----
@@ -164,4 +190,4 @@ for epoch in range(args.num_epochs):
     # ---- Save checkpoint ----
     torch.save(model.state_dict(), f"{args.exp_name}/latest.pth")
 
-print("✅ Training finished")
+print("=*=*=*=*=*| Training finished |*=*=*=*=*=")
