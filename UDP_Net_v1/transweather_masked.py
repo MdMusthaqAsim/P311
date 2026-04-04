@@ -880,28 +880,26 @@ class MaskedResidualTransWeather(nn.Module):
         self.mask_net = mask_net         # REAL CNN (not dummy)
         self.dehazer = Transweather()      # expects 4-channel input
 
-    def forward(self, x):
+    def forward(self, x, custom_mask=None):
         """
-        x: [B, 3, H, W] original hazy image
+        x: [B, 3, H, W]
+        custom_mask: optional [B, 1, H, W]
         """
 
-        # 1. Predict region-of-interest mask
-        mask = self.mask_net(x)            # [B, 1, H, W]
+        # 1. Use custom mask if provided
+        if custom_mask is not None:
+            mask = custom_mask
+        else:
+            mask = self.mask_net(x)
 
         # 2. Append mask as 4th channel
-        x_masked = torch.cat([x, mask], dim=1)  # [B, 4, H, W]
+        x_masked = torch.cat([x, mask], dim=1)
 
-        # 3. Dehaze (unchanged TransWeather)
-        dehazed = self.dehazer(x_masked, mask)   # [B, 3, H, W]
+        # 3. Dehaze
+        dehazed = self.dehazer(x_masked, mask)
 
-        # 4. Residual gated fusion (KEY IDEA)
-        # out = mask * dehazed + (1.0 - mask) * x
-
-        # 4. Residual fusion correction
+        # 4. Residual gated fusion
         out = x + mask * (dehazed - x)
-
-        # 4. No fusion (DO NOT, THIS IS ASS)
-        # out = dehazed
 
         return out, mask
 
