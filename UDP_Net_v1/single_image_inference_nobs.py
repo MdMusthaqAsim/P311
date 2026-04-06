@@ -21,7 +21,7 @@ model.load_state_dict(ckpt, strict=False)
 model.eval()
 
 # ---------------- image ----------------
-input_path = r"C:\Users\USER\IdeaProjects\P311\UDP_Net_v1\testImg3.jpeg"
+input_path = r"C:\Users\USER\IdeaProjects\P311\UDP_Net_v1\tt4.jpeg"
 
 transform = T.Compose([
     T.Resize((192, 192)),
